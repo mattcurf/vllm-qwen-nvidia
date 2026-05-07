@@ -1,4 +1,4 @@
-# Qwen3.6-27B NVFP4 vLLM Stack
+# Qwen3.6-27B Int4 AutoRound vLLM Stack
 
 > **Status: hobby project, provided as-is.** This repository is a personal
 > single-GPU configuration that the maintainer happens to find useful. It is
@@ -8,22 +8,18 @@
 > (Apache License 2.0) for the formal terms, and `CONTRIBUTING.md` if you'd
 > like to send a fix or improvement.
 
-This directory contains a Dockerized vLLM setup for serving `Qwen3.6-27B` as a fully GPU-accelerated OpenAI-compatible API on port `8888`, tuned for a single NVIDIA RTX 5090 (32 GB) with the multimodal `text + image` checkpoint `sakamakismile/Qwen3.6-27B-NVFP4`.
+This directory contains a Dockerized vLLM setup for serving `Lorbus/Qwen3.6-27B-int4-AutoRound` as a fully GPU-accelerated OpenAI-compatible API on port `8888`, exposed as `qwen3.6-27b-int4-autoround` and tuned for a single NVIDIA RTX 5090 (32 GB).
 
 The defaults:
 - current nightly vLLM container via `vllm/vllm-openai:cu129-nightly`
-- `Qwen3.6-27B` NVFP4 checkpoint
-- `MTP = 2`
-- `204,800` token context
-- multimodal enabled for text + image
-- `flashinfer-cutlass` NVFP4 kernel path because the current `marlin` path crashes on this checkpoint
+- `Lorbus/Qwen3.6-27B-int4-AutoRound`
+- served model name `qwen3.6-27b-int4-autoround`
+- `MTP = 1`
+- `262,144` token context
+- `fp8` KV cache
+- `GPU_MEMORY_UTILIZATION=0.85`
+- multimodal `text + image` support retained from the base Qwen3.6-27B checkpoint
 - OpenAI-compatible server on `http://localhost:8888/v1`
-
-## Important Constraint
-
-The public `~80 t/s @ 218k` Reddit recipe for a single RTX 5090 uses the text-only checkpoint [`sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP`](https://huggingface.co/sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP), which physically removes the vision tower. That recipe cannot satisfy a `text + image` requirement.
-
-This repo keeps the multimodal vision tower enabled and still configures native MTP at `2`, but the exact `60+ tokens/sec with images at full 204,800-token context` target depends on prompt structure, image size, driver stack, and current upstream Blackwell kernel behavior. The stack here is set up to maximize the chance of hitting that target without dropping image support or using CPU offload.
 
 ## Prerequisites
 
@@ -41,14 +37,13 @@ docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
 
 - `Dockerfile` builds a small wrapper image on top of the CUDA 12.9 nightly vLLM image.
 - `docker-compose.yml` starts the server with GPU access and the required vLLM flags.
-- `.env.example` contains the tuning knobs for a single RTX 5090.
-- `scripts/serve.sh` converts env vars into the final `vllm serve` command.
+- `scripts/serve.sh` defines the built-in model and tuning defaults, then converts env vars into the final `vllm serve` command.
 - `scripts/benchmark_multimodal.py` sends one text+image request and prints measured tokens/sec.
 
 ## Quick Start
 
 ```bash
-# Edit .env if you want to change the defaults.
+# Set overrides in your environment or a local .env file if you do not want the built-in defaults.
 docker compose up -d --build
 docker compose logs -f
 ```
@@ -65,6 +60,7 @@ With a local image:
 
 ```bash
 python3 scripts/benchmark_multimodal.py \
+  --model qwen3.6-27b-int4-autoround \
   --image /path/to/image.jpg \
   --prompt "Describe this image and extract all visible text."
 ```
@@ -73,6 +69,7 @@ With a remote image URL:
 
 ```bash
 python3 scripts/benchmark_multimodal.py \
+  --model qwen3.6-27b-int4-autoround \
   --image-url https://vllm-public-assets.s3.us-west-2.amazonaws.com/vision_model_images/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg \
   --prompt "Describe the scene in detail."
 ```
@@ -102,23 +99,15 @@ docker run --rm \
   -e HF_TOKEN="$HF_TOKEN" \
   -e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
   -e PORT=8888 \
-  -e MODEL_ID=sakamakismile/Qwen3.6-27B-NVFP4 \
-  -e SERVED_MODEL_NAME=qwen3.6-27b-nvfp4-multimodal \
-  -e MAX_MODEL_LEN=204800 \
-  -e GPU_MEMORY_UTILIZATION=0.95 \
+  -e MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound \
+  -e SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround \
+  -e MAX_MODEL_LEN=262144 \
+  -e GPU_MEMORY_UTILIZATION=0.85 \
   -e KV_CACHE_DTYPE=fp8 \
-  -e MTP_TOKENS=3 \
+  -e MTP_TOKENS=1 \
   -e SPECULATIVE_METHOD=mtp \
-  -e MAX_NUM_SEQS=1 \
-  -e MAX_NUM_BATCHED_TOKENS=2048 \
-  -e LIMIT_MM_PER_PROMPT_JSON='{"image":{"count":1,"width":1024,"height":1024},"video":0}' \
-  -e MM_PROCESSOR_CACHE_TYPE=shm \
+  -e MAX_NUM_SEQS=3 \
   -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-  -e VLLM_USE_FLASHINFER_SAMPLER=1 \
-  -e VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass \
-  -e PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True,max_split_size_mb:512' \
-  -e CUDA_DEVICE_MAX_CONNECTIONS=8 \
-  -e OMP_NUM_THREADS=1 \
   qwen3.6-vllm-local:latest
 ```
 
@@ -130,31 +119,29 @@ The required GPU reachability flags are the important part:
 
 ## Default Tuning Choices
 
-- `MODEL_ID=sakamakismile/Qwen3.6-27B-NVFP4`
-- `MAX_MODEL_LEN=204800`
-- `MTP_TOKENS=3`
+- `MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound`
+- `SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround`
+- `MAX_MODEL_LEN=262144`
+- `MTP_TOKENS=1`
 - `KV_CACHE_DTYPE=fp8`
-- `GPU_MEMORY_UTILIZATION=0.95`
-- `MAX_NUM_SEQS=1`
-- `MAX_NUM_BATCHED_TOKENS=2048`
-- `LIMIT_MM_PER_PROMPT_JSON={"image":{"count":1,"width":1024,"height":1024},"video":0}`
-- `VLLM_NVFP4_GEMM_BACKEND=flashinfer-cutlass`
+- `GPU_MEMORY_UTILIZATION=0.85`
+- `MAX_NUM_SEQS=3`
 
 Why these defaults:
 
-- `fp8` KV cache is the supported compressed cache format for this Qwen3.6 decoder-attention path in vLLM and is the right starting point for fitting long context on a 32 GB card.
-- `MAX_NUM_SEQS=1` and `MAX_NUM_BATCHED_TOKENS=2048` bias the server toward single-request interactive performance and long-context fit.
-- `LIMIT_MM_PER_PROMPT_JSON` keeps image support enabled while disabling video profiling overhead.
-- `flashinfer-cutlass` is pinned because the current `marlin` kernel path crashes for this checkpoint with `size_n = 96 is not divisible by tile_n_size = 64`.
+- `fp8` KV cache is the supported compressed cache format for this Qwen3.6 path in mainline vLLM and is the right starting point for fitting long context on a 32 GB card.
+- `MTP_TOKENS=1` keeps native speculative decoding enabled without pushing aggressive draft settings.
+- `MAX_NUM_SEQS=3` is a moderate concurrency target for a single-GPU setup; lower it if you want more headroom for larger prompts or stricter memory margins.
+- `MAX_MODEL_LEN=262144` matches the long-context target of Qwen3.6, but it is also the first knob to reduce if your driver or nightly build needs more headroom.
 
 ## If You Need To Adjust
 
-If the multimodal model does not fit cleanly at full `204800` context on your exact driver/runtime combination, edit `.env` in this order:
+If the model does not fit cleanly at full `262144` context on your exact driver/runtime combination, edit `.env` or your exported environment in this order:
 
-1. lower `MAX_MODEL_LEN` to `196608`
+1. lower `MAX_MODEL_LEN` to `204800`
 2. lower `MAX_MODEL_LEN` again to `131072`
-3. temporarily unset `VLLM_NVFP4_GEMM_BACKEND` to let vLLM auto-select if a newer nightly fixes backend selection
-4. lower `MAX_NUM_BATCHED_TOKENS` to `1024`
+3. lower `MAX_NUM_SEQS` to `1`
+4. set `MTP_TOKENS=0` if you want the simplest non-speculative path while debugging startup or stability
 
 If model initialization fails immediately with an out-of-memory error, check for another GPU-heavy container first:
 
@@ -165,7 +152,7 @@ docker stop vllm-server
 
 On this host, a separate `vllm-server` container was observed holding roughly 30 GB of VRAM, which is enough to make this stack fail even with otherwise-correct settings.
 
-For highest decode throughput when you do not need images, the proven single-5090 path is the separate text-only checkpoint from the Reddit thread. This repo intentionally does not default to that model because you asked for `text + image` support.
+Text-only checkpoints can still be faster on a single RTX 5090. This repo intentionally defaults to the AutoRound multimodal checkpoint instead, so `text + image` requests continue to work.
 
 ## CUDA Image Note
 
@@ -193,5 +180,5 @@ This stack is a personal experiment shared in case it is useful to others.
 It is not affiliated with or endorsed by Anthropic, the vLLM project,
 Alibaba/Qwen, NVIDIA, or any quant author referenced here. Defaults change
 as nightly vLLM and the surrounding ecosystem evolve; always read the
-current `.env.example` and the launch logs before assuming a documented
+current `scripts/serve.sh`, your local `.env` or exported environment, and the launch logs before assuming a documented
 setting still applies.
