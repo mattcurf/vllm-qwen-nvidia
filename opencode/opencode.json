@@ -1,0 +1,257 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": "notify",
+
+  "provider": {
+    "vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "vLLM — Qwen3.6-27B-INT4-AutoRound",
+      "options": {
+        "baseURL": "http://desktop-linux.tecnovelty.net:8888/v1"
+      },
+      "models": {
+        "qwen3.6-27b-int4-autoround": {
+          "name": "Qwen3.6 27B Dense INT4 AutoRound (desktop-linux)",
+          "limit": { "context": 262144, "output": 32768 },
+          "options": {
+            "extraBody": {
+              "chat_template_kwargs": { "enable_thinking": false }
+            }
+          },
+          "variants": {
+            "fast": {
+              "options": {
+                "extraBody": {
+                  "chat_template_kwargs": { "enable_thinking": false }
+                }
+              }
+            },
+            "thinking": {
+              "options": {
+                "extraBody": {
+                  "chat_template_kwargs": { "enable_thinking": true }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "model": "vllm/qwen3.6-27b-int4-autoround",
+
+  "permission": {
+    "edit": "allow",
+    "webfetch": "ask",
+    "bash": {
+      "*": "allow",
+      "git push *": "ask",
+      "git push --force *": "deny",
+      "git push -f *": "deny",
+      "git commit *": "ask",
+      "git tag *": "ask",
+      "git reset --hard *": "ask",
+      "git rebase *": "ask",
+      "git branch -D *": "ask",
+      "git clean -f *": "ask",
+      "rm -rf *": "ask",
+      "rm -rf /*": "deny",
+      "rm -rf ~*": "deny",
+      "sudo *": "ask",
+      "su *": "ask",
+      "chmod 777 *": "ask",
+      "chown *": "ask",
+      "cargo publish *": "ask",
+      "cargo yank *": "ask",
+      "npm publish *": "ask",
+      "yarn publish *": "ask",
+      "pnpm publish *": "ask",
+      "docker push *": "ask",
+      "docker rm -f *": "ask",
+      "docker rmi -f *": "ask",
+      "docker system prune *": "ask",
+      "kubectl delete *": "ask",
+      "kubectl apply *": "ask",
+      "kubectl patch *": "ask",
+      "aptly publish *": "ask",
+      "aws s3 rm *": "ask",
+      "aws s3 sync --delete *": "ask",
+      "gh release create *": "ask",
+      "gh pr merge *": "ask",
+      "gh repo delete *": "deny",
+      "curl * | sh": "deny",
+      "curl * | bash": "deny",
+      "wget * | sh": "deny",
+      "wget * | bash": "deny",
+      "dd if=*": "ask",
+      "mkfs *": "deny",
+      ":(){ :|:& };:": "deny"
+    },
+    "external_directory": {
+      "*": "ask",
+      "~/projects/**": "allow",
+      "~/code/**": "allow",
+      "~/work/**": "allow",
+      "~/.config/opencode/**": "allow",
+      "/etc/**": "deny",
+      "/var/**": "deny",
+      "/usr/**": "deny",
+      "~/.ssh/**": "deny",
+      "~/.gnupg/**": "deny",
+      "~/.aws/**": "deny",
+      "~/.kube/**": "deny"
+    }
+  },
+
+  "agent": {
+    "build": {
+      "description": "Default development agent for multi-file edits, refactors, code generation, and tool-heavy loops. Uses the local vLLM Qwen3.6 INT4 AutoRound server with thinking disabled for reliable tool calls.",
+      "model": "vllm/qwen3.6-27b-int4-autoround",
+      "prompt": "You are the build agent. Implement the requested change using local files and tools. Do not print private reasoning or lines beginning with 'Thinking:'. Do not browse the web unless the user explicitly asks. Prefer one tool call at a time and use exact OpenCode tool names.",
+      "temperature": 0.0,
+      "top_p": 0.7,
+      "topK": 20,
+      "minP": 0,
+      "presencePenalty": 0,
+      "repetitionPenalty": 1,
+      "parallelToolCalls": false,
+      "tools": {
+        "webfetch": false,
+        "task": false,
+        "todowrite": false,
+        "skill": false
+      },
+      "options": {
+        "extraBody": {
+          "chat_template_kwargs": { "enable_thinking": false },
+          "parallel_tool_calls": false
+        }
+      }
+    },
+    "general": {
+      "description": "Conversational Q&A on the local vLLM Qwen3.6 INT4 AutoRound server with thinking disabled.",
+      "model": "vllm/qwen3.6-27b-int4-autoround",
+      "temperature": 0.3,
+      "top_p": 0.8,
+      "topK": 20,
+      "minP": 0,
+      "presencePenalty": 0,
+      "repetitionPenalty": 1,
+      "options": {
+        "extraBody": {
+          "chat_template_kwargs": { "enable_thinking": false }
+        }
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "ask"
+      }
+    },
+    "plan": {
+      "description": "Read-only planning and architecture analysis on the local vLLM Qwen3.6 INT4 AutoRound server with thinking explicitly enabled.",
+      "model": "vllm/qwen3.6-27b-int4-autoround",
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "presencePenalty": 0,
+      "repetitionPenalty": 1,
+      "options": {
+        "extraBody": {
+          "chat_template_kwargs": { "enable_thinking": true }
+        }
+      },
+      "permission": {
+        "edit": "deny",
+        "webfetch": "ask",
+        "bash": {
+          "*": "ask",
+          "ls": "allow",
+          "ls *": "allow",
+          "cat *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "less *": "allow",
+          "more *": "allow",
+          "wc *": "allow",
+          "file *": "allow",
+          "stat *": "allow",
+          "tree": "allow",
+          "tree *": "allow",
+          "find *": "allow",
+          "fd *": "allow",
+          "grep *": "allow",
+          "rg *": "allow",
+          "ripgrep *": "allow",
+          "ag *": "allow",
+          "sort *": "allow",
+          "uniq *": "allow",
+          "awk *": "allow",
+          "sed -n *": "allow",
+          "cut *": "allow",
+          "jq *": "allow",
+          "yq *": "allow",
+          "xmllint --noout *": "allow",
+          "git status": "allow",
+          "git status *": "allow",
+          "git log *": "allow",
+          "git log": "allow",
+          "git show *": "allow",
+          "git diff": "allow",
+          "git diff *": "allow",
+          "git blame *": "allow",
+          "git branch": "allow",
+          "git branch -a": "allow",
+          "git branch -v *": "allow",
+          "git remote": "allow",
+          "git remote -v": "allow",
+          "git remote show *": "allow",
+          "git ls-files *": "allow",
+          "git ls-files": "allow",
+          "git rev-parse *": "allow",
+          "git config --get *": "allow",
+          "cargo tree *": "allow",
+          "cargo tree": "allow",
+          "cargo metadata *": "allow",
+          "cargo check": "allow",
+          "cargo check *": "allow",
+          "npm ls": "allow",
+          "npm ls *": "allow",
+          "pnpm ls": "allow",
+          "pnpm ls *": "allow",
+          "yarn list": "allow",
+          "yarn list *": "allow"
+        }
+      }
+    }
+  },
+
+  "instructions": [
+    "AGENTS.md"
+  ],
+
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      "target/**",
+      ".venv/**",
+      "venv/**",
+      "dist/**",
+      "build/**",
+      ".next/**",
+      ".cache/**",
+      "**/.cache/**",
+      "*.log",
+      ".git/**",
+      "vendor/**"
+    ]
+  },
+
+  "disabled_providers": [
+    "openai",
+    "anthropic",
+    "google"
+  ]
+}

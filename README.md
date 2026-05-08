@@ -15,9 +15,11 @@ The defaults:
 - `Lorbus/Qwen3.6-27B-int4-AutoRound`
 - served model name `qwen3.6-27b-int4-autoround`
 - `MTP = 1`
-- `262,144` token context
+- `190,484` token context
 - `fp8` KV cache
 - `GPU_MEMORY_UTILIZATION=0.85`
+- automatic tool choice enabled
+- default tool-call parser `qwen3_coder`
 - multimodal `text + image` support retained from the base Qwen3.6-27B checkpoint
 - OpenAI-compatible server on `http://localhost:8888/v1`
 
@@ -39,6 +41,24 @@ docker run --rm --gpus all nvidia/cuda:12.9.0-base-ubuntu22.04 nvidia-smi
 - `docker-compose.yml` starts the server with GPU access and the required vLLM flags.
 - `scripts/serve.sh` defines the built-in model and tuning defaults, then converts env vars into the final `vllm serve` command.
 - `scripts/benchmark_multimodal.py` sends one text+image request and prints measured tokens/sec.
+
+## Persistent Caches
+
+Compose preserves the two cache directories that materially affect startup
+time:
+
+- `${HF_CACHE:-./hf-cache}` mounted at `/root/.cache/huggingface` for model,
+  tokenizer, and processor downloads.
+- `${VLLM_CACHE:-./vllm-cache}` mounted at `/root/.cache/vllm` for vLLM
+  torch.compile/AOT artifacts such as
+  `/root/.cache/vllm/torch_compile_cache/...`.
+
+The vLLM cache mount is based on startup logs like:
+
+```text
+Using cache directory: /root/.cache/vllm/torch_compile_cache/... for vLLM's torch.compile
+saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/...
+```
 
 ## Quick Start
 
@@ -96,17 +116,19 @@ docker run --rm \
   --ipc=host \
   -p 8888:8888 \
   -v "$(pwd)/hf-cache:/root/.cache/huggingface" \
+  -v "$(pwd)/vllm-cache:/root/.cache/vllm" \
   -e HF_TOKEN="$HF_TOKEN" \
   -e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
   -e PORT=8888 \
   -e MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound \
   -e SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround \
-  -e MAX_MODEL_LEN=262144 \
+  -e MAX_MODEL_LEN=190484 \
   -e GPU_MEMORY_UTILIZATION=0.85 \
   -e KV_CACHE_DTYPE=fp8 \
   -e MTP_TOKENS=1 \
   -e SPECULATIVE_METHOD=mtp \
   -e MAX_NUM_SEQS=3 \
+  -e TOOL_CALL_PARSER=qwen3_coder \
   -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
   qwen3.6-vllm-local:latest
 ```
@@ -121,27 +143,51 @@ The required GPU reachability flags are the important part:
 
 - `MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound`
 - `SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround`
-- `MAX_MODEL_LEN=262144`
+- `MAX_MODEL_LEN=190484`
 - `MTP_TOKENS=1`
 - `KV_CACHE_DTYPE=fp8`
 - `GPU_MEMORY_UTILIZATION=0.85`
 - `MAX_NUM_SEQS=3`
+- `ENABLE_AUTO_TOOL_CHOICE=1`
+- `TOOL_CALL_PARSER=qwen3_coder`
 
 Why these defaults:
 
 - `fp8` KV cache is the supported compressed cache format for this Qwen3.6 path in mainline vLLM and is the right starting point for fitting long context on a 32 GB card.
 - `MTP_TOKENS=1` keeps native speculative decoding enabled without pushing aggressive draft settings.
 - `MAX_NUM_SEQS=3` is a moderate concurrency target for a single-GPU setup; lower it if you want more headroom for larger prompts or stricter memory margins.
-- `MAX_MODEL_LEN=262144` matches the long-context target of Qwen3.6, but it is also the first knob to reduce if your driver or nightly build needs more headroom.
+- `MAX_MODEL_LEN=190484` keeps a long context while leaving more memory
+  headroom than the full Qwen3.6 context target.
+- `ENABLE_AUTO_TOOL_CHOICE=1` allows clients such as OpenCode to send
+  `tool_choice: "auto"`.
+- `TOOL_CALL_PARSER=qwen3_coder` is the working Qwen parser path for
+  OpenCode tool calls. The `qwen3_xml` parser has been observed to fail with
+  `Expected 'function.name' to be a string` for this setup.
+
+## Tool Calling
+
+Automatic tool calling for clients such as OpenCode is enabled by default:
+
+```bash
+ENABLE_AUTO_TOOL_CHOICE=1
+TOOL_CALL_PARSER=qwen3_coder
+```
+
+`qwen3_coder` is now the built-in parser default. If your deployment has the
+enhanced Qwen chat template available, you can also pass it directly instead
+of using `EXTRA_VLLM_ARGS`:
+
+```bash
+CHAT_TEMPLATE=/models/qwen3.5-enhanced.jinja
+```
 
 ## If You Need To Adjust
 
-If the model does not fit cleanly at full `262144` context on your exact driver/runtime combination, edit `.env` or your exported environment in this order:
+If the model does not fit cleanly at `190484` context on your exact driver/runtime combination, edit `.env` or your exported environment in this order:
 
-1. lower `MAX_MODEL_LEN` to `204800`
-2. lower `MAX_MODEL_LEN` again to `131072`
-3. lower `MAX_NUM_SEQS` to `1`
-4. set `MTP_TOKENS=0` if you want the simplest non-speculative path while debugging startup or stability
+1. lower `MAX_MODEL_LEN` to `131072`
+2. lower `MAX_NUM_SEQS` to `1`
+3. set `MTP_TOKENS=0` if you want the simplest non-speculative path while debugging startup or stability
 
 If model initialization fails immediately with an out-of-memory error, check for another GPU-heavy container first:
 
