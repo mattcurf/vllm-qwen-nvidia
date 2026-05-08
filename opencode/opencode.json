@@ -7,11 +7,11 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "vLLM — Qwen3.6-27B-INT4-AutoRound",
       "options": {
-        "baseURL": "http://desktop-linux.tecnovelty.net:8888/v1"
+        "baseURL": "http://localhost:8888/v1"
       },
       "models": {
         "qwen3.6-27b-int4-autoround": {
-          "name": "Qwen3.6 27B Dense INT4 AutoRound (desktop-linux)",
+          "name": "Qwen3.6 27B Dense INT4 AutoRound",
           "limit": { "context": 262144, "output": 32768 },
           "options": {
             "extraBody": {
