@@ -97,7 +97,7 @@ The `.opencode.json` file supports the following sections:
       "models": {
         "qwen3.6-27b-int4-autoround": {
           "name": "Qwen3.6 27B Dense INT4 AutoRound",
-          "limit": { "context": 262144, "output": 32768 }
+          "limit": { "context": 163840, "output": 32768 }
         }
       }
     }

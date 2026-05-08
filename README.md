@@ -14,10 +14,11 @@ The defaults:
 - current nightly vLLM container via `vllm/vllm-openai:cu129-nightly`
 - `Lorbus/Qwen3.6-27B-int4-AutoRound`
 - served model name `qwen3.6-27b-int4-autoround`
-- `MTP = 1`
-- `190,484` token context
+- `MTP = 2`
+- `163,840` token context
 - `fp8` KV cache
-- `GPU_MEMORY_UTILIZATION=0.85`
+- `GPU_MEMORY_UTILIZATION=0.9`
+- prefix caching enabled
 - automatic tool choice enabled
 - default tool-call parser `qwen3_coder`
 - multimodal `text + image` support retained from the base Qwen3.6-27B checkpoint
@@ -122,12 +123,14 @@ docker run --rm \
   -e PORT=8888 \
   -e MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound \
   -e SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround \
-  -e MAX_MODEL_LEN=190484 \
-  -e GPU_MEMORY_UTILIZATION=0.85 \
+  -e MAX_MODEL_LEN=163840 \
+  -e GPU_MEMORY_UTILIZATION=0.9 \
   -e KV_CACHE_DTYPE=fp8 \
-  -e MTP_TOKENS=1 \
+  -e MTP_TOKENS=2 \
   -e SPECULATIVE_METHOD=mtp \
   -e MAX_NUM_SEQS=3 \
+  -e MAX_NUM_BATCHED_TOKENS=4096 \
+  -e ENABLE_PREFIX_CACHING=1 \
   -e TOOL_CALL_PARSER=qwen3_coder \
   -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
   qwen3.6-vllm-local:latest
@@ -143,21 +146,27 @@ The required GPU reachability flags are the important part:
 
 - `MODEL_ID=Lorbus/Qwen3.6-27B-int4-AutoRound`
 - `SERVED_MODEL_NAME=qwen3.6-27b-int4-autoround`
-- `MAX_MODEL_LEN=190484`
-- `MTP_TOKENS=1`
+- `MAX_MODEL_LEN=163840`
+- `MTP_TOKENS=2`
 - `KV_CACHE_DTYPE=fp8`
-- `GPU_MEMORY_UTILIZATION=0.85`
+- `GPU_MEMORY_UTILIZATION=0.9`
 - `MAX_NUM_SEQS=3`
+- `MAX_NUM_BATCHED_TOKENS=4096`
+- `ENABLE_PREFIX_CACHING=1`
 - `ENABLE_AUTO_TOOL_CHOICE=1`
 - `TOOL_CALL_PARSER=qwen3_coder`
 
 Why these defaults:
 
 - `fp8` KV cache is the supported compressed cache format for this Qwen3.6 path in mainline vLLM and is the right starting point for fitting long context on a 32 GB card.
-- `MTP_TOKENS=1` keeps native speculative decoding enabled without pushing aggressive draft settings.
+- `MTP_TOKENS=2` uses native speculative decoding more aggressively after observed high MTP acceptance with one draft token.
 - `MAX_NUM_SEQS=3` is a moderate concurrency target for a single-GPU setup; lower it if you want more headroom for larger prompts or stricter memory margins.
-- `MAX_MODEL_LEN=190484` keeps a long context while leaving more memory
-  headroom than the full Qwen3.6 context target.
+- `MAX_NUM_BATCHED_TOKENS=4096` gives the scheduler room for the additional
+  MTP draft token slots.
+- `MAX_MODEL_LEN=163840` keeps a long context while leaving more memory
+  headroom for KV cache and speculative decoding.
+- `ENABLE_PREFIX_CACHING=1` reuses shared prompt prefixes across compatible
+  chat requests.
 - `ENABLE_AUTO_TOOL_CHOICE=1` allows clients such as OpenCode to send
   `tool_choice: "auto"`.
 - `TOOL_CALL_PARSER=qwen3_coder` is the working Qwen parser path for
@@ -183,9 +192,9 @@ CHAT_TEMPLATE=/models/qwen3.5-enhanced.jinja
 
 ## If You Need To Adjust
 
-If the model does not fit cleanly at `190484` context on your exact driver/runtime combination, edit `.env` or your exported environment in this order:
+If the model does not fit cleanly at `163840` context on your exact driver/runtime combination, edit `.env` or your exported environment in this order:
 
-1. lower `MAX_MODEL_LEN` to `131072`
+1. lower `MAX_MODEL_LEN`
 2. lower `MAX_NUM_SEQS` to `1`
 3. set `MTP_TOKENS=0` if you want the simplest non-speculative path while debugging startup or stability
 
